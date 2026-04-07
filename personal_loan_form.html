@@ -215,7 +215,10 @@ canvas.sig-mini { width: 100%; height: 52px; border: 1px solid var(--border); bo
 </div>
 
 <script>
-const refNum = 'PLA-' + Math.random().toString(36).substr(2,8).toUpperCase();
+const STORAGE_KEY = 'loan_form_data';
+const savedRef = localStorage.getItem('loan_form_ref');
+const refNum = savedRef || 'PLA-' + Math.random().toString(36).substr(2,8).toUpperCase();
+if(!savedRef) localStorage.setItem('loan_form_ref', refNum);
 const docDate = new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
 const fmt = n => '$' + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
 const fmtD = s => s ? new Date(s+'T12:00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}) : '—';
@@ -254,6 +257,7 @@ function setMode(m) {
   document.getElementById('calcI').style.display=m==='i'?'':'none';
   document.getElementById('calcP').style.display=m==='p'?'':'none';
   recalc();
+  saveForm();
 }
 
 function chkRate() {
@@ -311,13 +315,13 @@ function setupSig(id){
   const pos=e=>{const r=c.getBoundingClientRect();const s=e.touches?e.touches[0]:e;return[s.clientX-r.left,s.clientY-r.top];};
   c.addEventListener('mousedown',e=>{drawing=true;[lx,ly]=pos(e);});
   c.addEventListener('mousemove',e=>{if(!drawing)return;const[x,y]=pos(e);ctx.beginPath();ctx.moveTo(lx,ly);ctx.lineTo(x,y);ctx.stroke();[lx,ly]=[x,y];});
-  c.addEventListener('mouseup',()=>drawing=false);
-  c.addEventListener('mouseleave',()=>drawing=false);
+  c.addEventListener('mouseup',()=>{drawing=false;saveSig(id);});
+  c.addEventListener('mouseleave',()=>{drawing=false;saveSig(id);});
   c.addEventListener('touchstart',e=>{e.preventDefault();drawing=true;[lx,ly]=pos(e);},{passive:false});
   c.addEventListener('touchmove',e=>{e.preventDefault();if(!drawing)return;const[x,y]=pos(e);ctx.beginPath();ctx.moveTo(lx,ly);ctx.lineTo(x,y);ctx.stroke();[lx,ly]=[x,y];},{passive:false});
-  c.addEventListener('touchend',()=>drawing=false);
+  c.addEventListener('touchend',()=>{drawing=false;saveSig(id);});
 }
-function clrSig(id){const c=document.getElementById(id);c.getContext('2d').clearRect(0,0,c.width,c.height);}
+function clrSig(id){const c=document.getElementById(id);c.getContext('2d').clearRect(0,0,c.width,c.height);localStorage.removeItem('loan_form_'+id);}
 
 function renderReview(){
   const P=parseFloat(v('principal'))||0;
@@ -497,13 +501,65 @@ async function sharePDF(){
 }
 
 function startOver(){
-  if(confirm('Start a new agreement? All data will be cleared.')) location.reload();
+  if(confirm('Start a new agreement? All data will be cleared.')){
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem('loan_form_ref');
+    localStorage.removeItem('loan_form_lSig');
+    localStorage.removeItem('loan_form_bSig');
+    localStorage.removeItem('loan_form_mode');
+    location.reload();
+  }
+}
+
+const FIELD_IDS = ['principal','rate','startDate','term','dueDate','lateFee','county','lName','lAddr','lCity','lZip','lEmail','lPhone','lDate','bName','bAddr','bCity','bZip','bEmail','bPhone','bDate'];
+
+function saveForm(){
+  const data = {};
+  FIELD_IDS.forEach(id => { const el=document.getElementById(id); if(el) data[id]=el.value; });
+  data._mode = mode;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+function saveSig(id){
+  try{
+    const c=document.getElementById(id);
+    if(c) localStorage.setItem('loan_form_'+id, c.toDataURL());
+  }catch(e){}
+}
+
+function loadForm(){
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if(!raw) return;
+  try{
+    const data = JSON.parse(raw);
+    FIELD_IDS.forEach(id => { const el=document.getElementById(id); if(el && data[id]!==undefined) el.value=data[id]; });
+    if(data._mode) setMode(data._mode);
+  }catch(e){}
+}
+
+function loadSig(id){
+  const dataUrl = localStorage.getItem('loan_form_'+id);
+  if(!dataUrl) return;
+  const c=document.getElementById(id);
+  if(!c) return;
+  const img=new Image();
+  img.onload=()=>{
+    const ctx=c.getContext('2d');
+    ctx.drawImage(img,0,0,c.width,c.height);
+  };
+  img.src=dataUrl;
 }
 
 window.addEventListener('load',()=>{
+  loadForm();
   setupSig('lSig');
   setupSig('bSig');
+  setTimeout(()=>{ loadSig('lSig'); loadSig('bSig'); },150);
   recalc();
+  FIELD_IDS.forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.addEventListener('input',saveForm);
+  });
 });
 </script>
 </body>
